@@ -5,6 +5,8 @@
 ## 文件索引
 - [整體系統架構](docs/architecture.md)
 - [開發執行計畫](docs/implementation-plan.md)
+- [認證與註冊服務設計](docs/auth-service.md)
+- [Auth API OpenAPI 規格](docs/api/authentication.yaml)
 
 ## 初步目標
 1. 定義使用者旅程與主要功能模組。
