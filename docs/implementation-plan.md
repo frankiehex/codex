@@ -22,7 +22,7 @@
 - 設計品牌識別、插畫、App Store 行銷素材。
 
 ### 2. 後端服務
-- 建立 API Gateway、Auth Service（OAuth 2.1 / OIDC）。
+- 建立 API Gateway、Auth Service（OAuth 2.1 / OIDC），支援手機號碼註冊與簡訊 OTP 驗證流程。
 - 實作 Location、Availability、Order/Payment、Integration Gateway 微服務。
 - 建置訊息佇列與事件串流（Kafka / PubSub），進行機台遙測蒐集。
 - 佈署於雲端（GCP/AWS）並使用 Terraform/IaC 管理。
@@ -36,7 +36,7 @@
 - 與洗車設備商協議 API/通訊協定，建立測試環境與模擬器。
 - 建立中介閘道（MQTT/HTTPS）並實作命令簽章、回報機制。
 - 與販賣機供應商整合商品資料與庫存同步。
-- 導入支付（Stripe/Line Pay/信用卡 Tokenization）、導航（Google/Apple/HERE）API。
+- 導入支付（Stripe/Line Pay/信用卡 Tokenization）、導航（Google/Apple/HERE）、簡訊 OTP（Twilio、MessageBird 或在地業者）API。
 
 ### 5. 資安與合規
 - 完成資料分類、資安政策、SOC 2/ISO 27001 自評。

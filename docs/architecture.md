@@ -14,7 +14,7 @@ Create a nationwide mobile experience that allows drivers to discover self-servi
   - **Location Service:** Stores site metadata, geofences, service capabilities, amenities, pricing.
   - **Availability Service:** Streams occupancy, queue length, machine health from IoT controllers.
   - **Order & Payment Service:** Handles booking, payments, coupons, vending inventory, refunds.
-  - **User Service:** Authentication, profiles, vehicle preferences, loyalty points.
+  - **User Service:** Phone-number registration with SMS OTP verification, authentication, profiles, vehicle preferences, loyalty points.
   - **Notification Service:** Push notifications, SMS/email, marketing campaigns.
   - **Integration Gateway:** Manages connections to car wash PLCs/IoT devices, vending machines, third-party navigation (Google Maps, Apple Maps), and coupon partners.
 - **Data Platform**
@@ -27,14 +27,15 @@ Create a nationwide mobile experience that allows drivers to discover self-servi
   - Marketing tools for coupon creation, segmentation, campaign tracking.
 
 ## User Journey Flow
-1. User opens the app and sees nearby car wash sites on a map sorted by proximity and wait time.
-2. Selecting a site reveals real-time bay availability, services, pricing, promotions.
-3. User reserves a time slot or starts immediate session, applies coupons, and pays.
-4. Navigation integrates with native map apps for turn-by-turn guidance.
-5. Upon arrival, geofencing or QR code check-in confirms presence.
-6. User triggers the wash via app; backend sends command through Integration Gateway to the machine controller.
-7. During wash, app offers add-ons (foam, waxing) and vending machine purchases via in-app payment.
-8. Session summary and loyalty points are updated; user receives digital receipt.
+1. User signs up with their mobile number, enters the one-time SMS code to verify, and creates a profile.
+2. User opens the app and sees nearby car wash sites on a map sorted by proximity and wait time.
+3. Selecting a site reveals real-time bay availability, services, pricing, promotions.
+4. User reserves a time slot or starts immediate session, applies coupons, and pays.
+5. Navigation integrates with native map apps for turn-by-turn guidance.
+6. Upon arrival, geofencing or QR code check-in confirms presence.
+7. User triggers the wash via app; backend sends command through Integration Gateway to the machine controller.
+8. During wash, app offers add-ons (foam, waxing) and vending machine purchases via in-app payment.
+9. Session summary and loyalty points are updated; user receives digital receipt.
 
 ## API Integrations
 - **Mapping & Navigation:** Google Maps Directions API, Apple MapKit, or HERE for route planning, ETA, and traffic-aware wait estimates.
@@ -42,6 +43,7 @@ Create a nationwide mobile experience that allows drivers to discover self-servi
 - **Car Wash Controllers:** IoT gateway using MQTT/HTTPS bridging to PLC vendors (e.g., Istobal, WashTec) with secure device identity.
 - **Vending Machines:** MDB/DEX compliant smart vending APIs for inventory & purchase commands.
 - **Coupon Partners:** Affiliate networks or custom partner APIs for coupon distribution and redemption validation.
+- **SMS / OTP Providers:** Twilio, MessageBird、亞太地區簡訊業者等，用於註冊與風險控管的驗證碼發送。
 
 ## Security & Compliance
 - OAuth 2.1 / OpenID Connect for user authentication.
