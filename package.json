@@ -1,0 +1,20 @@
+{
+  "name": "ai-car-wash-auth-service",
+  "version": "0.1.0",
+  "description": "Prototype OTP authentication service for AI car wash app",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "supertest": "^6.3.4"
+  }
+}
