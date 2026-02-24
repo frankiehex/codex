@@ -22,6 +22,13 @@ npm run dev
 
 Open `http://localhost:5173?room=YOUR_ROOM` in two tabs to test collaboration.
 
+## Tech Stack
+
+- Vanilla JS + Vite
+- Y.js + y-webrtc (P2P CRDT)
+- Tailwind CSS v4
+- WebRTC Voice Chat
+
 ## Deploy
 
 ```bash

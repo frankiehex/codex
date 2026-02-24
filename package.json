@@ -1,20 +1,20 @@
 {
-  "name": "ai-car-wash-auth-service",
+  "name": "syncink",
   "version": "0.1.0",
-  "description": "Prototype OTP authentication service for AI car wash app",
-  "main": "src/server.js",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "start": "node src/server.js",
-    "test": "node --test"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
   "dependencies": {
-    "express": "^4.19.2",
-    "uuid": "^9.0.1"
+    "yjs": "^13.6.0",
+    "y-webrtc": "^10.3.0"
   },
   "devDependencies": {
-    "supertest": "^6.3.4"
+    "vite": "^6.0.0",
+    "tailwindcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0"
   }
 }
