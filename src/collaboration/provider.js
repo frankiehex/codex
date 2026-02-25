@@ -1,62 +1,77 @@
 import * as Y from 'yjs'
+import { WebsocketProvider } from 'y-websocket'
 import { WebrtcProvider } from 'y-webrtc'
 
-const SIGNALING_SERVERS = [
-  'wss://signaling.yjs.dev'
-]
+const WS_URL = 'wss://demos.yjs.dev/ws'
+const SIGNALING_SERVERS = ['wss://signaling.yjs.dev']
 
 export function createProvider(roomId) {
   const ydoc = new Y.Doc()
   const roomName = `syncink-${roomId}`
 
-  const provider = new WebrtcProvider(roomName, ydoc, {
-    signaling: SIGNALING_SERVERS,
-    maxConns: 20,
-    filterBcConns: true
-  })
+  // Primary: WebSocket provider (reliable, works cross-browser/cross-network)
+  const wsProvider = new WebsocketProvider(WS_URL, roomName, ydoc)
+  const awareness = wsProvider.awareness
 
-  const awareness = provider.awareness
+  // Secondary: WebRTC provider (P2P, lower latency when available)
+  // Uses the SAME ydoc and awareness so both providers sync the same data
+  let rtcProvider = null
+  try {
+    rtcProvider = new WebrtcProvider(roomName, ydoc, {
+      signaling: SIGNALING_SERVERS,
+      awareness,
+      maxConns: 20,
+      filterBcConns: true
+    })
+  } catch (e) {
+    console.warn('WebRTC provider failed to initialize:', e)
+  }
 
   // Connection status tracking
   let status = 'connecting'
   const statusListeners = []
-
-  provider.on('status', (event) => {
-    // Don't downgrade from 'connected' to 'connecting'
-    if (status === 'connected' && event.status === 'connecting') return
-    status = event.status
-    statusListeners.forEach(fn => fn(status))
-  })
-
   let synced = false
   const syncListeners = []
+
+  function setStatus(newStatus) {
+    if (status === newStatus) return
+    // Don't downgrade from connected
+    if (status === 'connected' && newStatus === 'connecting') return
+    status = newStatus
+    statusListeners.forEach(fn => fn(status))
+  }
 
   function markSynced() {
     if (synced) return
     synced = true
-    status = 'connected'
-    statusListeners.forEach(fn => fn(status))
+    setStatus('connected')
     syncListeners.forEach(fn => fn())
     syncListeners.length = 0
   }
 
-  // y-webrtc synced event: fires when initial sync with a peer completes
-  provider.on('synced', (s) => {
-    // Handle both boolean and { synced: boolean } formats
-    const isSynced = typeof s === 'boolean' ? s : s && s.synced !== false
-    if (isSynced) markSynced()
-  })
-
-  // Fallback: y-webrtc peers event — peer connected but synced may not fire
-  provider.on('peers', () => {
-    if (!synced) {
-      setTimeout(() => markSynced(), 300)
+  // WebSocket status events
+  wsProvider.on('status', (event) => {
+    if (event.status === 'connected') {
+      setStatus('connected')
     }
   })
 
+  wsProvider.on('sync', (isSynced) => {
+    if (isSynced) markSynced()
+  })
+
+  // WebRTC synced as bonus
+  if (rtcProvider) {
+    rtcProvider.on('synced', (s) => {
+      const ok = typeof s === 'boolean' ? s : s && s.synced !== false
+      if (ok) markSynced()
+    })
+  }
+
   return {
     ydoc,
-    provider,
+    provider: wsProvider,
+    rtcProvider,
     awareness,
 
     get status() { return status },
@@ -64,7 +79,6 @@ export function createProvider(roomId) {
 
     onStatusChange(fn) {
       statusListeners.push(fn)
-      // Immediately notify with current status
       fn(status)
       return () => {
         const idx = statusListeners.indexOf(fn)
@@ -81,7 +95,8 @@ export function createProvider(roomId) {
     },
 
     destroy() {
-      provider.destroy()
+      wsProvider.destroy()
+      if (rtcProvider) rtcProvider.destroy()
       ydoc.destroy()
     }
   }
