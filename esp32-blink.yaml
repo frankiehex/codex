@@ -1,0 +1,369 @@
+esphome:
+  name: esp32-blink
+  friendly_name: esp32-blink
+  on_boot:
+    priority: -100
+    then:
+      - light.turn_on:
+          id: rgb_led
+          brightness: 80%
+          effect: "Rainbow Cycle"
+  # Include custom AWS IoT MQTT component
+  includes:
+    - custom_components/aws_iot_mqtt.h
+  platformio_options:
+    lib_deps:
+      - "knolleary/PubSubClient@^2.8"
+    build_flags:
+      - "-I/Users/f/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src"
+      - "-I/Users/f/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src"
+    lib_ldf_mode: chain+
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "ivQPuuo8P+YDwS4c+v97viAyw6LtRIwbFcZ1YhhMJvs="
+
+ota:
+  password: "23d3086768ccc952505ee431922a3732"
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # AP mode - WiFi hotspot
+  ap:
+    ssid: "ESP32-Blink-AP"
+    password: "12345678"
+
+# Captive portal for WiFi configuration
+captive_portal:
+
+# Web Server - provides web UI for control
+web_server:
+  port: 80
+  auth:
+    username: admin
+    password: "123456"
+
+# NTP Time Sync (required for HMAC timestamp)
+time:
+  - platform: sntp
+    id: sntp_time
+    servers:
+      - "pool.ntp.org"
+      - "time.nist.gov"
+
+# ============================================
+# Custom AWS IoT MQTT Component
+# (replaces built-in mqtt: which doesn't support ALPN)
+# ============================================
+custom_component:
+  - lambda: |-
+      auto aws_mqtt = new AwsIotMqttComponent();
+      aws_mqtt->host = "a1lzjxzwzlrsek-ats.iot.ap-southeast-1.amazonaws.com";
+      aws_mqtt->port = 443;
+      aws_mqtt->tenant_id = "3b346aa6affad553b2395b86ee4f9d1d";
+      aws_mqtt->secret_key = "123456";
+      aws_mqtt->nonce = "localtest";
+      aws_mqtt->auth_name = "ygl-test-third";
+      aws_mqtt->client_id = "esp32-blink-001";
+      aws_mqtt->sub_topics = {
+        "ygl/device/status/3b346aa6affad553b2395b86ee4f9d1f/SW-L-01223"
+      };
+      aws_mqtt->topic_sensors = {id(mqtt_topic1_value)};
+      aws_mqtt->status_sensor = id(mqtt_status_text);
+      return {aws_mqtt};
+
+# ============================================
+# Text Sensors - display on Web UI
+# ============================================
+text_sensor:
+  # --- System Info ---
+  - platform: template
+    name: "Firmware Version"
+    id: firmware_version
+    icon: "mdi:tag"
+    lambda: |-
+      if (global_aws_mqtt) return std::string(global_aws_mqtt->get_version());
+      return std::string("N/A");
+    update_interval: 60s
+
+  - platform: template
+    name: "Current Time (UTC+8)"
+    id: current_time_text
+    icon: "mdi:clock-outline"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_current_time_str();
+      return std::string("N/A");
+    update_interval: 5s
+
+  - platform: template
+    name: "System Uptime"
+    id: uptime_text
+    icon: "mdi:timer-sand"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_uptime_str();
+      return std::string("N/A");
+    update_interval: 5s
+
+  # --- MQTT Status ---
+  - platform: template
+    name: "MQTT Status"
+    id: mqtt_status_text
+    icon: "mdi:cloud-check"
+
+  - platform: template
+    name: "Subscribed Topics"
+    id: subscribed_topics_list
+    icon: "mdi:format-list-bulleted"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_subscribed_topics_str();
+      return std::string("N/A");
+    update_interval: 60s
+
+  # --- MQTT Topic Messages (last received) ---
+  - platform: template
+    name: "Topic 1: device/status"
+    id: mqtt_topic1_value
+    icon: "mdi:message-text"
+
+  # --- WiFi Info ---
+  - platform: wifi_info
+    ip_address:
+      name: "IP Address"
+    ssid:
+      name: "Connected SSID"
+    mac_address:
+      name: "MAC Address"
+
+# ============================================
+# Sensors - numeric monitoring stats
+# ============================================
+sensor:
+  # --- System Resources ---
+  - platform: template
+    name: "CPU Frequency"
+    id: cpu_freq
+    icon: "mdi:chip"
+    accuracy_decimals: 0
+    unit_of_measurement: "MHz"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_cpu_freq_mhz();
+      return 0.0f;
+    update_interval: 30s
+
+  - platform: template
+    name: "Heap Usage"
+    id: heap_usage
+    icon: "mdi:memory"
+    accuracy_decimals: 1
+    unit_of_measurement: "%"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_heap_usage_pct();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "Free Heap"
+    id: free_heap
+    icon: "mdi:memory"
+    accuracy_decimals: 0
+    unit_of_measurement: "bytes"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_free_heap();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "Min Free Heap"
+    id: min_free_heap
+    icon: "mdi:alert-octagon"
+    accuracy_decimals: 0
+    unit_of_measurement: "bytes"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_min_free_heap();
+      return 0.0f;
+    update_interval: 10s
+
+  # --- WiFi ---
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 30s
+
+  # --- MQTT Stats ---
+  - platform: template
+    name: "MQTT Reconnect Count"
+    id: mqtt_reconnect_count
+    icon: "mdi:refresh"
+    accuracy_decimals: 0
+    unit_of_measurement: "times"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_reconnect_count();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "MQTT Messages Received"
+    id: mqtt_total_messages
+    icon: "mdi:email-receive"
+    accuracy_decimals: 0
+    unit_of_measurement: "msgs"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_total_messages();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "Current Session Duration"
+    id: mqtt_current_conn
+    icon: "mdi:connection"
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_current_conn_secs();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "Longest Connection"
+    id: mqtt_longest_conn
+    icon: "mdi:arrow-up-bold"
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_longest_conn_secs();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "Shortest Connection"
+    id: mqtt_shortest_conn
+    icon: "mdi:arrow-down-bold"
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_shortest_conn_secs();
+      return 0.0f;
+    update_interval: 10s
+
+# ============================================
+# WS2812 RGB LED on GPIO48
+# ============================================
+light:
+  - platform: neopixelbus
+    name: "RGB LED"
+    id: rgb_led
+    type: GRB
+    variant: WS2812
+    pin: GPIO48
+    num_leds: 1
+    method:
+      type: esp32_rmt
+      channel: 0
+    default_transition_length: 1s
+    effects:
+      - random:
+          name: "Rainbow Cycle"
+          transition_length: 2s
+          update_interval: 3s
+      - pulse:
+          name: "Pulse"
+          transition_length: 1s
+          update_interval: 1s
+      - strobe:
+          name: "Strobe"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 0%
+              blue: 0%
+              duration: 500ms
+            - state: false
+              duration: 500ms
+            - state: true
+              brightness: 100%
+              red: 0%
+              green: 100%
+              blue: 0%
+              duration: 500ms
+            - state: false
+              duration: 500ms
+            - state: true
+              brightness: 100%
+              red: 0%
+              green: 0%
+              blue: 100%
+              duration: 500ms
+            - state: false
+              duration: 500ms
+      - strobe:
+          name: "Fast Flash"
+          colors:
+            - state: true
+              brightness: 100%
+              red: 100%
+              green: 100%
+              blue: 100%
+              duration: 100ms
+            - state: false
+              duration: 100ms
+
+# ============================================
+# Buttons
+# ============================================
+button:
+  - platform: restart
+    name: "Restart ESP32"
+
+  - platform: template
+    name: "MQTT Publish Test"
+    icon: "mdi:send"
+    on_press:
+      - lambda: |-
+          if (global_aws_mqtt) {
+            global_aws_mqtt->publish(
+              "ygl/device/status/3b346aa6affad553b2395b86ee4f9d1f/SW-L-01223",
+              "{\"device\":\"SW-L-01223\",\"status\":\"alive\"}");
+          }
+
+# ============================================
+# Switches
+# ============================================
+switch:
+  - platform: template
+    name: "MQTT Connected"
+    id: mqtt_connected_switch
+    icon: "mdi:cloud-sync"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->is_connected();
+      return false;
+    turn_on_action:
+      - logger.log: "MQTT is managed automatically"
+    turn_off_action:
+      - logger.log: "MQTT is managed automatically"
+
+# ============================================
+# Interval - update MQTT status periodically
+# ============================================
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          if (global_aws_mqtt) {
+            if (global_aws_mqtt->is_connected()) {
+              id(mqtt_status_text).publish_state("Connected");
+            } else {
+              id(mqtt_status_text).publish_state("Disconnected");
+            }
+          }
