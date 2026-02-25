@@ -1,0 +1,650 @@
+esphome:
+  name: t-display-s3-mqtt
+  friendly_name: T-Display-S3 MQTT
+  on_boot:
+    priority: -100
+    then:
+      - light.turn_on:
+          id: lcd_backlight
+          brightness: 80%
+  # Include custom AWS IoT MQTT component
+  includes:
+    - custom_components/aws_iot_mqtt.h
+  platformio_options:
+    lib_deps:
+      - "knolleary/PubSubClient@^2.8"
+    build_flags:
+      - "-I/Users/f/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src"
+      - "-I/Users/f/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src"
+    lib_ldf_mode: chain+
+
+# T-Display-S3 display driver (local external component)
+external_components:
+  - source:
+      type: local
+      path: tdisplays3
+    components: [tdisplays3]
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "ivQPuuo8P+YDwS4c+v97viAyw6LtRIwbFcZ1YhhMJvs="
+
+ota:
+  password: "23d3086768ccc952505ee431922a3732"
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # AP mode fallback
+  ap:
+    ssid: "T-Display-S3-AP"
+    password: "12345678"
+
+# Captive portal for WiFi configuration
+captive_portal:
+
+# Web Server - provides web UI for control
+web_server:
+  port: 80
+  auth:
+    username: admin
+    password: "123456"
+
+# NTP Time Sync (required for HMAC timestamp)
+time:
+  - platform: sntp
+    id: sntp_time
+    servers:
+      - "pool.ntp.org"
+      - "time.nist.gov"
+
+# ============================================
+# Backlight Output (GPIO38 PWM)
+# ============================================
+output:
+  - platform: ledc
+    pin: GPIO38
+    id: backlight_pwm
+    frequency: 2000
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm
+    name: "5.HW - LCD Backlight"
+    id: lcd_backlight
+    restore_mode: RESTORE_DEFAULT_ON
+
+# ============================================
+# Fonts for LCD Display
+# ============================================
+font:
+  - file: "gfonts://Roboto"
+    id: font_title
+    size: 18
+
+  - file: "gfonts://Roboto"
+    id: font_body
+    size: 14
+
+  - file: "gfonts://Roboto Mono"
+    id: font_value
+    size: 13
+
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 10
+
+# ============================================
+# Globals for page tracking
+# ============================================
+globals:
+  - id: current_page
+    type: int
+    initial_value: "0"
+
+# ============================================
+# LCD Display - T-Display-S3 (320x170 landscape)
+# ============================================
+display:
+  - platform: tdisplays3
+    id: my_display
+    update_interval: 2s
+    rotation: 270
+    pages:
+      # ---- Page 1: System Overview ----
+      - id: page_system
+        lambda: |-
+          int w = it.get_width();   // 320
+          int h = it.get_height();  // 170
+
+          // Title bar background
+          it.filled_rectangle(0, 0, w, 22, Color(0, 40, 80));
+          it.printf(4, 3, id(font_title), Color(255, 255, 255), "SYSTEM OVERVIEW");
+
+          // MQTT status dot
+          if (global_aws_mqtt && global_aws_mqtt->is_connected()) {
+            it.filled_circle(w - 30, 11, 5, Color(0, 200, 0));
+          } else {
+            it.filled_circle(w - 30, 11, 5, Color(200, 0, 0));
+          }
+          it.printf(w - 4, 5, id(font_small), Color(180, 180, 180), TextAlign::TOP_RIGHT, "1/4");
+
+          // Content
+          int y = 28;
+          int lh = 22;  // line height
+          auto white = Color(255, 255, 255);
+          auto gray = Color(160, 160, 160);
+          auto cyan = Color(0, 210, 210);
+
+          it.printf(4, y, id(font_body), gray, "FW Version:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%s",
+              id(firmware_version).state.c_str());
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Time:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%s",
+              id(current_time_text).state.c_str());
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Uptime:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%s",
+              id(uptime_text).state.c_str());
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "WiFi:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%s (%.0f dBm)",
+              id(wifi_ssid_info).state.c_str(), id(wifi_signal_sensor).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "IP:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%s",
+              id(ip_address_info).state.c_str());
+
+          // Bottom nav
+          it.filled_rectangle(0, h - 16, w, 16, Color(30, 30, 30));
+          it.printf(4, h - 14, id(font_small), Color(100, 100, 100), "< Prev");
+          it.printf(w / 2, h - 14, id(font_small), Color(140, 140, 140), TextAlign::TOP_CENTER, "[1/4]");
+          it.printf(w - 4, h - 14, id(font_small), Color(100, 100, 100), TextAlign::TOP_RIGHT, "Next >");
+
+      # ---- Page 2: MQTT Status ----
+      - id: page_mqtt
+        lambda: |-
+          int w = it.get_width();
+          int h = it.get_height();
+
+          it.filled_rectangle(0, 0, w, 22, Color(0, 60, 40));
+          it.printf(4, 3, id(font_title), Color(255, 255, 255), "MQTT STATUS");
+
+          if (global_aws_mqtt && global_aws_mqtt->is_connected()) {
+            it.filled_circle(w - 30, 11, 5, Color(0, 200, 0));
+          } else {
+            it.filled_circle(w - 30, 11, 5, Color(200, 0, 0));
+          }
+          it.printf(w - 4, 5, id(font_small), Color(180, 180, 180), TextAlign::TOP_RIGHT, "2/4");
+
+          int y = 28;
+          int lh = 21;
+          auto gray = Color(160, 160, 160);
+          auto cyan = Color(0, 210, 210);
+          auto green = Color(0, 220, 80);
+          auto red = Color(220, 60, 60);
+
+          it.printf(4, y, id(font_body), gray, "Status:");
+          if (global_aws_mqtt && global_aws_mqtt->is_connected()) {
+            it.printf(w - 4, y, id(font_value), green, TextAlign::TOP_RIGHT, "Connected");
+          } else {
+            it.printf(w - 4, y, id(font_value), red, TextAlign::TOP_RIGHT, "Disconnected");
+          }
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Reconnects:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f",
+              id(mqtt_reconnect_count).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Session:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f s",
+              id(mqtt_current_conn).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Longest:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f s",
+              id(mqtt_longest_conn).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Shortest:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f s",
+              id(mqtt_shortest_conn).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Messages:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f",
+              id(mqtt_total_messages).state);
+
+          // Bottom nav
+          it.filled_rectangle(0, h - 16, w, 16, Color(30, 30, 30));
+          it.printf(4, h - 14, id(font_small), Color(100, 100, 100), "< Prev");
+          it.printf(w / 2, h - 14, id(font_small), Color(140, 140, 140), TextAlign::TOP_CENTER, "[2/4]");
+          it.printf(w - 4, h - 14, id(font_small), Color(100, 100, 100), TextAlign::TOP_RIGHT, "Next >");
+
+      # ---- Page 3: System Resources ----
+      - id: page_resources
+        lambda: |-
+          int w = it.get_width();
+          int h = it.get_height();
+
+          it.filled_rectangle(0, 0, w, 22, Color(60, 30, 0));
+          it.printf(4, 3, id(font_title), Color(255, 255, 255), "SYSTEM RESOURCES");
+
+          if (global_aws_mqtt && global_aws_mqtt->is_connected()) {
+            it.filled_circle(w - 30, 11, 5, Color(0, 200, 0));
+          } else {
+            it.filled_circle(w - 30, 11, 5, Color(200, 0, 0));
+          }
+          it.printf(w - 4, 5, id(font_small), Color(180, 180, 180), TextAlign::TOP_RIGHT, "3/4");
+
+          int y = 28;
+          int lh = 22;
+          auto gray = Color(160, 160, 160);
+          auto cyan = Color(0, 210, 210);
+
+          it.printf(4, y, id(font_body), gray, "CPU Freq:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f MHz",
+              id(cpu_freq).state);
+          y += lh;
+
+          // Heap usage with progress bar
+          float heap_pct = id(heap_usage).state;
+          it.printf(4, y, id(font_body), gray, "Heap Used:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.1f%%", heap_pct);
+          y += lh - 2;
+
+          // Progress bar
+          int bar_x = 4;
+          int bar_w = w - 8;
+          int bar_h = 8;
+          it.rectangle(bar_x, y, bar_w, bar_h, gray);
+          int fill_w = (int)(bar_w * heap_pct / 100.0f);
+          if (fill_w > bar_w) fill_w = bar_w;
+          auto bar_color = heap_pct > 80 ? Color(220, 60, 60) : heap_pct > 60 ? Color(220, 180, 0) : Color(0, 200, 80);
+          it.filled_rectangle(bar_x + 1, y + 1, fill_w - 2, bar_h - 2, bar_color);
+          y += bar_h + 6;
+
+          it.printf(4, y, id(font_body), gray, "Free Heap:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f bytes",
+              id(free_heap).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "Min Heap:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f bytes",
+              id(min_free_heap).state);
+          y += lh;
+
+          it.printf(4, y, id(font_body), gray, "WiFi Signal:");
+          it.printf(w - 4, y, id(font_value), cyan, TextAlign::TOP_RIGHT, "%.0f dBm",
+              id(wifi_signal_sensor).state);
+
+          // Bottom nav
+          it.filled_rectangle(0, h - 16, w, 16, Color(30, 30, 30));
+          it.printf(4, h - 14, id(font_small), Color(100, 100, 100), "< Prev");
+          it.printf(w / 2, h - 14, id(font_small), Color(140, 140, 140), TextAlign::TOP_CENTER, "[3/4]");
+          it.printf(w - 4, h - 14, id(font_small), Color(100, 100, 100), TextAlign::TOP_RIGHT, "Next >");
+
+      # ---- Page 4: MQTT Messages ----
+      - id: page_messages
+        lambda: |-
+          int w = it.get_width();
+          int h = it.get_height();
+
+          it.filled_rectangle(0, 0, w, 22, Color(50, 0, 60));
+          it.printf(4, 3, id(font_title), Color(255, 255, 255), "MQTT MESSAGES");
+
+          if (global_aws_mqtt && global_aws_mqtt->is_connected()) {
+            it.filled_circle(w - 30, 11, 5, Color(0, 200, 0));
+          } else {
+            it.filled_circle(w - 30, 11, 5, Color(200, 0, 0));
+          }
+          it.printf(w - 4, 5, id(font_small), Color(180, 180, 180), TextAlign::TOP_RIGHT, "4/4");
+
+          int y = 28;
+          auto gray = Color(160, 160, 160);
+          auto cyan = Color(0, 210, 210);
+          auto yellow = Color(220, 200, 0);
+
+          it.printf(4, y, id(font_body), gray, "Subscribed Topics:");
+          y += 18;
+          it.printf(8, y, id(font_small), cyan, "%s",
+              id(subscribed_topics_list).state.c_str());
+          y += 18;
+
+          // Separator line
+          it.line(4, y, w - 4, y, Color(60, 60, 60));
+          y += 6;
+
+          it.printf(4, y, id(font_body), gray, "Last Message:");
+          y += 18;
+
+          // Show message content, truncated to fit
+          std::string msg = id(mqtt_topic1_value).state;
+          if (msg.length() > 0) {
+            // Show up to 3 lines of message content
+            int max_chars = 42;  // approx chars per line with font_small
+            for (int line = 0; line < 3 && !msg.empty(); line++) {
+              std::string chunk;
+              if ((int)msg.length() <= max_chars) {
+                chunk = msg;
+                msg = "";
+              } else {
+                chunk = msg.substr(0, max_chars);
+                msg = msg.substr(max_chars);
+              }
+              it.printf(8, y, id(font_small), yellow, "%s", chunk.c_str());
+              y += 14;
+            }
+            if (!msg.empty()) {
+              it.printf(8, y, id(font_small), Color(100, 100, 100), "...(truncated)");
+            }
+          } else {
+            it.printf(8, y, id(font_small), Color(100, 100, 100), "No messages yet");
+          }
+
+          // Bottom nav
+          it.filled_rectangle(0, h - 16, w, 16, Color(30, 30, 30));
+          it.printf(4, h - 14, id(font_small), Color(100, 100, 100), "< Prev");
+          it.printf(w / 2, h - 14, id(font_small), Color(140, 140, 140), TextAlign::TOP_CENTER, "[4/4]");
+          it.printf(w - 4, h - 14, id(font_small), Color(100, 100, 100), TextAlign::TOP_RIGHT, "Next >");
+
+# ============================================
+# Button Navigation (Left = Prev, Right = Next)
+# ============================================
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Left Button"
+    id: btn_left
+    on_press:
+      then:
+        - display.page.show_previous: my_display
+        - component.update: my_display
+
+  - platform: gpio
+    pin:
+      number: GPIO14
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Right Button"
+    id: btn_right
+    on_press:
+      then:
+        - display.page.show_next: my_display
+        - component.update: my_display
+
+# ============================================
+# Custom AWS IoT MQTT Component
+# ============================================
+custom_component:
+  - lambda: |-
+      auto aws_mqtt = new AwsIotMqttComponent();
+      aws_mqtt->host = "a1lzjxzwzlrsek-ats.iot.ap-southeast-1.amazonaws.com";
+      aws_mqtt->port = 443;
+      aws_mqtt->tenant_id = "3b346aa6affad553b2395b86ee4f9d1d";
+      aws_mqtt->secret_key = "123456";
+      aws_mqtt->nonce = "localtest";
+      aws_mqtt->auth_name = "ygl-test-third";
+      aws_mqtt->client_id = "t-display-s3-001";
+      aws_mqtt->sub_topics = {
+        "ygl/device/status/3b346aa6affad553b2395b86ee4f9d1f/SW-L-01223"
+      };
+      aws_mqtt->topic_sensors = {id(mqtt_topic1_value)};
+      aws_mqtt->status_sensor = id(mqtt_status_text);
+      return {aws_mqtt};
+
+# ============================================
+# Text Sensors
+# ============================================
+text_sensor:
+  # --- 1. System Info ---
+  - platform: template
+    name: "1.System - Firmware Version"
+    id: firmware_version
+    icon: "mdi:tag"
+    lambda: |-
+      if (global_aws_mqtt) return std::string(global_aws_mqtt->get_version());
+      return std::string("N/A");
+    update_interval: 60s
+
+  - platform: template
+    name: "1.System - Current Time (UTC+8)"
+    id: current_time_text
+    icon: "mdi:clock-outline"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_current_time_str();
+      return std::string("N/A");
+    update_interval: 5s
+
+  - platform: template
+    name: "1.System - Uptime"
+    id: uptime_text
+    icon: "mdi:timer-sand"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_uptime_str();
+      return std::string("N/A");
+    update_interval: 5s
+
+  # --- 2. MQTT ---
+  - platform: template
+    name: "2.MQTT - Status"
+    id: mqtt_status_text
+    icon: "mdi:cloud-check"
+
+  - platform: template
+    name: "2.MQTT - Subscribed Topics"
+    id: subscribed_topics_list
+    icon: "mdi:format-list-bulleted"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_subscribed_topics_str();
+      return std::string("N/A");
+    update_interval: 60s
+
+  # --- 4. Messages ---
+  - platform: template
+    name: "4.Msg - Topic 1: device/status"
+    id: mqtt_topic1_value
+    icon: "mdi:message-text"
+
+  # --- 1. System - WiFi Info ---
+  - platform: wifi_info
+    ip_address:
+      name: "1.System - IP Address"
+      id: ip_address_info
+    ssid:
+      name: "1.System - WiFi SSID"
+      id: wifi_ssid_info
+    mac_address:
+      name: "1.System - MAC Address"
+
+# ============================================
+# Sensors - numeric monitoring stats
+# ============================================
+sensor:
+  # --- 3. Resources ---
+  - platform: template
+    name: "3.Resources - CPU Frequency"
+    id: cpu_freq
+    icon: "mdi:chip"
+    accuracy_decimals: 0
+    unit_of_measurement: "MHz"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_cpu_freq_mhz();
+      return 0.0f;
+    update_interval: 30s
+
+  - platform: template
+    name: "3.Resources - Heap Usage"
+    id: heap_usage
+    icon: "mdi:memory"
+    accuracy_decimals: 1
+    unit_of_measurement: "%"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->get_heap_usage_pct();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "3.Resources - Free Heap"
+    id: free_heap
+    icon: "mdi:memory"
+    accuracy_decimals: 0
+    unit_of_measurement: "bytes"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_free_heap();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "3.Resources - Min Free Heap"
+    id: min_free_heap
+    icon: "mdi:alert-octagon"
+    accuracy_decimals: 0
+    unit_of_measurement: "bytes"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_min_free_heap();
+      return 0.0f;
+    update_interval: 10s
+
+  # --- 5. Hardware ---
+  - platform: wifi_signal
+    name: "5.HW - WiFi Signal"
+    id: wifi_signal_sensor
+    update_interval: 30s
+
+  - platform: adc
+    pin: GPIO4
+    name: "5.HW - Battery Voltage"
+    id: battery_voltage
+    unit_of_measurement: "V"
+    accuracy_decimals: 2
+    attenuation: auto
+    update_interval: 30s
+    filters:
+      - multiply: 2.0
+
+  # --- 2. MQTT Stats ---
+  - platform: template
+    name: "2.MQTT - Reconnect Count"
+    id: mqtt_reconnect_count
+    icon: "mdi:refresh"
+    accuracy_decimals: 0
+    unit_of_measurement: "times"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_reconnect_count();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "2.MQTT - Messages Received"
+    id: mqtt_total_messages
+    icon: "mdi:email-receive"
+    accuracy_decimals: 0
+    unit_of_measurement: "msgs"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_total_messages();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "2.MQTT - Current Session"
+    id: mqtt_current_conn
+    icon: "mdi:connection"
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_current_conn_secs();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "2.MQTT - Longest Connection"
+    id: mqtt_longest_conn
+    icon: "mdi:arrow-up-bold"
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_longest_conn_secs();
+      return 0.0f;
+    update_interval: 10s
+
+  - platform: template
+    name: "2.MQTT - Shortest Connection"
+    id: mqtt_shortest_conn
+    icon: "mdi:arrow-down-bold"
+    accuracy_decimals: 0
+    unit_of_measurement: "s"
+    lambda: |-
+      if (global_aws_mqtt) return (float)global_aws_mqtt->get_shortest_conn_secs();
+      return 0.0f;
+    update_interval: 10s
+
+# ============================================
+# Buttons
+# ============================================
+button:
+  - platform: restart
+    name: "1.System - Restart"
+
+  - platform: template
+    name: "2.MQTT - Publish Test"
+    icon: "mdi:send"
+    on_press:
+      - lambda: |-
+          if (global_aws_mqtt) {
+            global_aws_mqtt->publish(
+              "ygl/device/status/3b346aa6affad553b2395b86ee4f9d1f/SW-L-01223",
+              "{\"device\":\"SW-L-01223\",\"status\":\"alive\"}");
+          }
+
+# ============================================
+# Switches
+# ============================================
+switch:
+  - platform: template
+    name: "2.MQTT - Connected"
+    id: mqtt_connected_switch
+    icon: "mdi:cloud-sync"
+    lambda: |-
+      if (global_aws_mqtt) return global_aws_mqtt->is_connected();
+      return false;
+    turn_on_action:
+      - logger.log: "MQTT is managed automatically"
+    turn_off_action:
+      - logger.log: "MQTT is managed automatically"
+
+# ============================================
+# Interval - update MQTT status periodically
+# ============================================
+interval:
+  - interval: 10s
+    then:
+      - lambda: |-
+          if (global_aws_mqtt) {
+            if (global_aws_mqtt->is_connected()) {
+              id(mqtt_status_text).publish_state("Connected");
+            } else {
+              id(mqtt_status_text).publish_state("Disconnected");
+            }
+          }
