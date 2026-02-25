@@ -1,7 +1,7 @@
 import { createProvider } from './collaboration/provider.js'
 import { setupAwareness } from './collaboration/awareness.js'
 import {
-  initDocument, getPageIds, getPageStrokes, createPage,
+  initDocument, ensurePage, getPageIds, getPageStrokes, createPage,
   addStroke, clearPageStrokes, triggerExplosion, triggerChaos,
   getMeta
 } from './collaboration/schema.js'
@@ -23,10 +23,7 @@ export function initApp(roomId, nickname, userColor) {
   const collab = createProvider(roomId)
   const { ydoc, provider, awareness } = collab
 
-  // Initialize Y.js document schema
-  initDocument(ydoc)
-
-  // Setup awareness
+  // Setup awareness (can start immediately, independent of doc sync)
   const awarenessManager = setupAwareness(awareness, {
     name: nickname,
     color: userColor,
@@ -39,7 +36,7 @@ export function initApp(roomId, nickname, userColor) {
   const engine = createEngine(canvas, effectsCanvas)
 
   // Current page state
-  let currentPageId = getPageIds(ydoc)[0] || 'p1'
+  let currentPageId = 'p1'
   engine.setCurrentPage(currentPageId)
 
   // Provide stroke data source to engine
@@ -65,15 +62,19 @@ export function initApp(roomId, nickname, userColor) {
   })
 
   // Observe Y.js stroke changes → re-render
+  let currentStrokeObserver = null
   function observeCurrentPage() {
     const strokes = getPageStrokes(ydoc, currentPageId)
     if (strokes) {
-      strokes.observe(() => {
-        engine.markStrokesDirty()
-      })
+      // Remove previous observer if any
+      if (currentStrokeObserver) {
+        try { currentStrokeObserver() } catch (_) {}
+      }
+      const handler = () => engine.markStrokesDirty()
+      strokes.observe(handler)
+      currentStrokeObserver = () => strokes.unobserve(handler)
     }
   }
-  observeCurrentPage()
 
   // Observe awareness changes → re-render
   awareness.on('change', () => {
@@ -145,11 +146,6 @@ export function initApp(roomId, nickname, userColor) {
         showToast(t('toast.userJoined', { name: user.name }), 'info')
       }
     }
-    for (const id of previousUsers) {
-      if (!currentUserIds.has(id)) {
-        // User left — we don't have their name anymore, so just mark it
-      }
-    }
     previousUsers = currentUserIds
   })
 
@@ -158,13 +154,6 @@ export function initApp(roomId, nickname, userColor) {
     const pageIds = getPageIds(ydoc)
     toolbar.updatePages(pageIds, currentPageId)
   }
-
-  // Observe page order changes
-  const pageOrder = ydoc.getMap('pages').get('pageOrder')
-  if (pageOrder) {
-    pageOrder.observe(updatePagesUI)
-  }
-  updatePagesUI()
 
   // Initialize members display
   toolbar.updateMembers(awarenessManager.getOnlineUsers())
@@ -207,6 +196,37 @@ export function initApp(roomId, nickname, userColor) {
     triggerExplosion(ydoc)
   })
 
+  // ===== KEY FIX: Wait for sync before initializing document =====
+  // This prevents race conditions where two peers create separate
+  // Y.js structures that overwrite each other
+  let docInitialized = false
+  function safeInitDocument() {
+    if (docInitialized) return
+    docInitialized = true
+
+    initDocument(ydoc)
+    currentPageId = getPageIds(ydoc)[0] || 'p1'
+    engine.setCurrentPage(currentPageId)
+    observeCurrentPage()
+    engine.markStrokesDirty()
+
+    // Observe page order changes
+    const pageOrder = ydoc.getMap('pages').get('pageOrder')
+    if (pageOrder) {
+      pageOrder.observe(updatePagesUI)
+    }
+    updatePagesUI()
+
+    // Update meta watchers after sync
+    lastExplosion = meta.get('explosionTrigger') || 0
+    lastChaos = meta.get('chaosTrigger') || 0
+  }
+
+  // Wait for sync first (data from other peers arrives)
+  collab.onSynced(() => safeInitDocument())
+  // Fallback: if we're the first peer, no one to sync with — init quickly
+  setTimeout(() => safeInitDocument(), 800)
+
   // 8. Stroke replay
   function replayStrokes() {
     const strokes = getPageStrokes(ydoc, currentPageId)
@@ -222,7 +242,6 @@ export function initApp(roomId, nickname, userColor) {
     // Sort by timestamp
     allStrokes.sort((a, b) => a.timestamp - b.timestamp)
 
-    const originalSource = engine.setStrokeSource
     let replayIndex = 0
 
     // Override stroke source to show progressive replay

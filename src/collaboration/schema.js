@@ -5,6 +5,14 @@ export function initDocument(ydoc) {
   const meta = ydoc.getMap('meta')
   const pages = ydoc.getMap('pages')
 
+  // Check if document is already initialized (by another peer)
+  if (pages.get('pageOrder') && pages.get('pageOrder').length > 0) {
+    // Document already initialized, ensure meta defaults exist
+    if (!meta.get('explosionTrigger')) meta.set('explosionTrigger', 0)
+    if (!meta.get('chaosTrigger')) meta.set('chaosTrigger', 0)
+    return
+  }
+
   ydoc.transact(() => {
     if (!meta.get('createdAt')) {
       meta.set('createdAt', Date.now())
@@ -18,14 +26,23 @@ export function initDocument(ydoc) {
       // Create first page
       const pageId = 'p1'
       pageOrder.push([pageId])
-      const pageMap = ydoc.getMap(`page:${pageId}`)
-      pageMap.set('strokes', new Y.Array())
-      const bg = new Y.Map()
-      bg.set('type', 'color')
-      bg.set('value', '#ffffff')
-      pageMap.set('background', bg)
+      ensurePage(ydoc, pageId)
     }
   })
+}
+
+// Safely ensure a page exists without overwriting
+export function ensurePage(ydoc, pageId) {
+  const pageMap = ydoc.getMap(`page:${pageId}`)
+  if (!pageMap.get('strokes')) {
+    pageMap.set('strokes', new Y.Array())
+  }
+  if (!pageMap.get('background')) {
+    const bg = new Y.Map()
+    bg.set('type', 'color')
+    bg.set('value', '#ffffff')
+    pageMap.set('background', bg)
+  }
 }
 
 export function getPageOrder(ydoc) {

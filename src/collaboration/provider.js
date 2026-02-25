@@ -2,9 +2,7 @@ import * as Y from 'yjs'
 import { WebrtcProvider } from 'y-webrtc'
 
 const SIGNALING_SERVERS = [
-  'wss://signaling.yjs.dev',
-  'wss://y-webrtc-signaling-eu.herokuapp.com',
-  'wss://y-webrtc-signaling-us.herokuapp.com'
+  'wss://signaling.yjs.dev'
 ]
 
 export function createProvider(roomId) {
@@ -24,14 +22,35 @@ export function createProvider(roomId) {
   const statusListeners = []
 
   provider.on('status', (event) => {
+    // Don't downgrade from 'connected' to 'connecting'
+    if (status === 'connected' && event.status === 'connecting') return
     status = event.status
     statusListeners.forEach(fn => fn(status))
   })
 
-  provider.on('synced', (synced) => {
-    if (synced) {
-      status = 'connected'
-      statusListeners.forEach(fn => fn(status))
+  let synced = false
+  const syncListeners = []
+
+  function markSynced() {
+    if (synced) return
+    synced = true
+    status = 'connected'
+    statusListeners.forEach(fn => fn(status))
+    syncListeners.forEach(fn => fn())
+    syncListeners.length = 0
+  }
+
+  // y-webrtc synced event: fires when initial sync with a peer completes
+  provider.on('synced', (s) => {
+    // Handle both boolean and { synced: boolean } formats
+    const isSynced = typeof s === 'boolean' ? s : s && s.synced !== false
+    if (isSynced) markSynced()
+  })
+
+  // Fallback: y-webrtc peers event — peer connected but synced may not fire
+  provider.on('peers', () => {
+    if (!synced) {
+      setTimeout(() => markSynced(), 300)
     }
   })
 
@@ -41,6 +60,7 @@ export function createProvider(roomId) {
     awareness,
 
     get status() { return status },
+    get synced() { return synced },
 
     onStatusChange(fn) {
       statusListeners.push(fn)
@@ -49,6 +69,14 @@ export function createProvider(roomId) {
       return () => {
         const idx = statusListeners.indexOf(fn)
         if (idx !== -1) statusListeners.splice(idx, 1)
+      }
+    },
+
+    onSynced(fn) {
+      if (synced) {
+        fn()
+      } else {
+        syncListeners.push(fn)
       }
     },
 
