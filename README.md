@@ -1,31 +1,62 @@
-# AI 自助洗車 App 企劃
+# Franklin Investment OS
 
-本專案整理建立全台 AI 自助洗車據點的行動應用與雲端平台規劃，協助車主快速找到附近可用的洗車站、即時排隊狀態、導航與支付整合，並串接洗車與販賣設備的外部 API。
+Franklin Investment OS 是可部署的投資管理 MVP，使用 Next.js + Supabase，提供投資部位、交易、結構型商品與報表 API。
 
-## 文件索引
-- [整體系統架構](docs/architecture.md)
-- [開發執行計畫](docs/implementation-plan.md)
-- [認證與註冊服務設計](docs/auth-service.md)
-- [Auth API OpenAPI 規格](docs/api/authentication.yaml)
+## Setup
+1. 複製 `.env.example` 為 `.env.local`
+2. 填入 Supabase / OpenAI / Cron 等環境變數
+3. 於 Supabase SQL Editor 執行 `supabase/migrations/0001_initial.sql`
+4. 執行 `supabase/seed.sql` 匯入測試資料
+5. 執行 `pnpm install`
+6. 執行 `pnpm dev`
 
-## 初步目標
-1. 定義使用者旅程與主要功能模組。
-2. 規劃與洗車設備、販賣機、導航與支付等第三方 API 的整合方式。
-3. 建立技術堆疊、資安與營運管理的最佳實務建議。
+## Environment Variables
+請參考 `.env.example`：
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_PROJECT_URL`
+- `MCP_INTERNAL_TOKEN`
+- `OPENAI_API_KEY`
+- `VERCEL_CRON_SECRET`
+- `DEFAULT_PORTFOLIO_ID`
+- `RESEND_API_KEY`
+- `REPORT_EMAIL_TO`
 
-後續可在此基礎上擴充詳細的產品需求文件（PRD）、UI/UX 原型與實作計畫，並依據開發執行計畫的里程碑追蹤進度。
-
-## OTP 驗證服務原型
-
-本儲存庫提供一個對應 `Auth API OpenAPI 規格` 的 Node.js Express 原型，可在本地啟動進行測試：
-
+## Local Run
 ```bash
-npm install
-npm start
+pnpm install
+pnpm dev
 ```
 
-執行單元測試以驗證 OTP 申請、重送、驗證與登出流程：
+## Deploy (Vercel)
+1. 將 repo 匯入 Vercel
+2. Build 目標設定 `apps/web`
+3. 加入所有 `.env.example` 變數
+4. Deploy
 
+## API Test Examples
 ```bash
-npm test
+curl -X POST http://localhost:3000/api/investments \
+  -H 'content-type: application/json' \
+  -d '{"portfolio_id":"11111111-1111-1111-1111-111111111111","product_type":"fcn","product_name":"Nomura AI Basket FCN","currency":"USD","notional":500000}'
+
+curl -X POST http://localhost:3000/api/structured-products \
+  -H 'content-type: application/json' \
+  -d '{"position_id":"22222222-2222-2222-2222-222222222222","structure_type":"fcn","coupon_pa":12,"strike_pct":72.05,"ko_barrier_pct":92,"observation_freq":"monthly","tenor_months":4,"memory_coupon":true,"denomination":500000,"settlement_currency":"USD"}'
+
+curl -X POST http://localhost:3000/api/transactions \
+  -H 'content-type: application/json' \
+  -d '{"portfolio_id":"11111111-1111-1111-1111-111111111111","position_id":"22222222-2222-2222-2222-222222222222","txn_type":"coupon","amount":20000,"currency":"USD"}'
+
+curl -X POST http://localhost:3000/api/reports/daily \
+  -H 'content-type: application/json' \
+  -d '{"portfolio_id":"11111111-1111-1111-1111-111111111111","report_date":"2026-03-14"}'
 ```
+
+## TODO
+- MCP server runtime wiring (transport/auth integration)
+- OCR parser
+- WhatsApp webhook
+- Market data integration and FCN risk engine
+- Email delivery with Resend
