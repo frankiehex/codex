@@ -1,20 +1,12 @@
 {
-  "name": "ai-car-wash-auth-service",
-  "version": "0.1.0",
-  "description": "Prototype OTP authentication service for AI car wash app",
-  "main": "src/server.js",
+  "name": "franklin-investment-os",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
   "scripts": {
-    "start": "node src/server.js",
-    "test": "node --test"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "dependencies": {
-    "express": "^4.19.2",
-    "uuid": "^9.0.1"
-  },
-  "devDependencies": {
-    "supertest": "^6.3.4"
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "lint": "pnpm --filter web lint",
+    "typecheck": "pnpm -r --if-present typecheck"
   }
 }
